@@ -1,0 +1,408 @@
+#LANG  "fblite"
+#include "file.bi"
+
+declare sub Main()
+declare sub Diffus()
+declare sub profile()
+declare sub saveResults()
+
+
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+declare sub calcConductivityXY()
+declare sub calcG(flag as string) 
+declare function FLalgo() as double
+declare sub T4(G1 as double,G2 as double, G3 as double, G5 as double ) 
+declare sub T5(G1 as double, G2 as double, G3 as double, G4 as double, G5 as double)
+declare function series(G1 as double, G2 as double) as double 
+declare function parallel(G1 as double, G2 as double) as double
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+dim shared as integer Lx, Ly, Lx1, Lmax, L2,t
+dim shared as string  filename 
+dim shared as double DensitySum, z,Gmin, Gmax
+
+Lx=128:Ly=128: L2=Lx*Ly: Lx1=Lx+1: if Ly>Lx1 then Lmax=Ly else Lmax=Lx1
+Gmin=1:Gmax=1000:
+z=0.8
+filename="Lx"+str(Lx)+"Ly"+str(Ly)+"Gm"+str(Gmax)+".dat"
+
+SCREEN 20: VIEW (100, 100)-(740, 740):WINDOW (0, 0)-(Lx1, 1.1)
+DIM shared as double C(0 TO Lx1, 1 TO Ly) :
+DIM shared as double D(0 TO Lx1, 1 TO Ly):
+DIM shared as double prof(0 TO Lx1)
+DIM shared as integer dx(4),dy(4)
+dx(1) = 1: dy(1) = 0:dx(2) = 0: dy(2) = -1:dx(3) = -1: dy(3) = 0:dx(4) = 0: dy(4) = 1: ' diffusion directions
+randomize(timer)
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+dim shared as double  G(1 to Lmax+1, 1 to Lmax+1, 1 to 2) ' conductivity of bonds
+dim shared as double condX, condY 
+dim shared as double siteGx(1 to Lx, 1 to Ly)             ' conductivity of sites
+dim shared as double siteGy(1 to Ly, 1 to Lx)
+
+
+'=============================================
+'  M A I N        P R O G R A M 
+'=============================================
+Main()
+END 0
+
+'==============================================
+'       E X T E R N A L    P R O C E D U R E S
+'==============================================
+
+sub Main()
+dim as integer x,y
+dim as double ratio
+ratio=1000:
+For x=1 to Lx: for y=1 to Ly:
+    siteGx(x,y)=Gmin: 
+    C(x,y)=1:D(x,y)=1/ratio: 
+    if z>rnd then D(x,y)=1:siteGx(x,y)=Gmax:  'damaged
+next y:  next x
+
+for y=1 to Ly:
+C(0,y)=0:D(0,y)=1:C(Lx1,y)=0:D(Lx1,y)=1:'damaged
+next y
+
+
+
+t=1: 
+profile(): calcConductivityXY(): saveResults()
+locate 1,1: print "                        ": 
+locate 1,1: print z: locate 2,1:? t; DensitySum; CondX; CondY: 
+sleep
+
+DO
+for i=1 to L2:Diffus():next i: t=t+1:
+
+if t mod 10 =0 then 
+    profile(): calcConductivityXY(): saveResults()
+    locate 1,1: print "                        ": 
+    locate 1,1: print z: locate 2,1:? t; DensitySum; CondX; CondY: 
+end if    
+    
+LOOP until t>1000000 or DensitySum<1e-5
+end sub
+
+sub Diffus()
+dim as integer i,xn,yn,x,y
+dim as double De,dC
+     x=Int(Lx*rnd)+1:y=Int(Ly*rnd)+1:i = INT(4 * RND) + 1: xn = x + dx(i): yn = y + dy(i):
+     if yn>Ly then yn=1
+     if yn<1 then yn=Ly
+     De=D(x,y)*D(xn,yn)/(D(x,y)+D(xn,yn)): '=0.5 for both damaged
+     dC=C(x,y)-C(xn,yn):C(x,y)=C(x,y)-dC*De:C(xn,yn)=C(xn,yn)+dC*De:
+     if D(x,y)=1 then siteGx(x,y)=Gmax*C(x,y):'locate 3,1: ?siteGx(x,y), C(x,y): sleep
+     if xn<=Lx and xn>=1 then if D(xn,yn)=1 then siteGx(xn,yn)=Gmax*C(xn,yn):'locate 3,1: ?siteGx(xn,yn), C(xn,yn): sleep
+     if xn>Lx then C(xn,yn)=0
+     if xn<1 then C(xn,yn)=0
+end sub
+
+sub profile()
+dim as integer x,y
+    DensitySum=0
+    for x=1 to Lx: 
+	prof(x)=0: 
+       		 for y=1 to Ly:prof(x)=prof(x)+C(x,y):DensitySum=DensitySum+C(x,y):  
+			next y
+            prof(x)=prof(x)/Ly: 
+
+    next x
+    DensitySum=DensitySum/L2
+    cls
+    line (Lx/2, 0)-(Lx/2,1)
+    pset(0,prof(0)): for x=1 to Lx1:line -(x,prof(x)): next x  
+end sub
+
+sub saveResults()
+  dim as double GX, GY 
+  if FileExists( filename ) then
+    open filename for append as #4
+  else
+    open filename for output as #4
+      '? #4, " p        lgGx    lgGy"
+      ? #4, " t   Density     Gx    Gy"
+  end if
+    'logarithm of base 10        
+    GY=log(CondX)*0.43429448:  GX=log(CondY)*0.43429448 
+                '   t     Density  GX      GY
+    ? #4, using "###### ####.##### ##########.##### ##########.##### "; t; DensitySum; CondX; CondY
+  close #4
+end sub
+
+
+
+
+'==== F R A N K - L O B B  A L G O R I T H M ===
+sub calcConductivityXY()
+  dim as integer Lysave, Lxsave, temp
+dim as integer x,y  
+for y=1 to Ly: for x=1 to Lx:
+    siteGy(y,x)=siteGx(x,y):
+next x:next y   
+ 
+  'CALCULATE THE CONDUCTIVITY OF FILM IN X-DIRECTION
+  'set the electrical conductivity of lattice bonds
+  calcG("x") 'for x-direction
+    
+  'calculate electrical conductivity of lattice
+  condX=FLalgo()
+   
+  'normalizate the lattice conductivity in x-direction
+  condX=condX*cdbl(Lx)/cdbl(Ly) 
+   
+  'CALCULATE THE CONDUCTIVITY OF FILM IN y-DIRECTION
+   'exchange of  lattice's sizes 
+   Lxsave=Lx:  Lysave=Ly
+   temp=Ly:  Ly=Lx:  Lx=temp: Lx1=Lx+1
+   
+   'set the electrical conductivity of lattice bonds
+   calcG("y") 'for y-direction
+   
+   'calculate electrical conductivity of lattice
+   condY=FLalgo()
+   
+   'normalizate the lattice conductivity in y-direction
+   condY=condY*cdbl(Lx)/cdbl(Ly)
+   
+   'returns the sizes to the initial values
+   Lx=Lxsave: Ly=Lysave: Lx1=Lx+1
+end sub
+
+
+sub calcG(flag as string) 
+dim as integer i,j		  
+dim as double  G1,G2,G3,G4  
+  for j=1 to Ly:for i=1 to Lx1
+    G(i,j,1)=0:  G(i,j,2)=0
+  next i: next j
+ 
+  for j=1 to Ly-1
+      'horizontal bond at the left-bootom corner of the lattice
+    if flag="x" then G1=siteGx(1,j) else G1=siteGy(1,j)
+    G(1,j,2)=2.0*G1
+      'vertical bond at the left-bootom corner of the lattice
+    if flag="x" then  G2=siteGx(1,j+1) else  G2=siteGy(1,j+1)
+    G(1,j,1)=2.0*G1*G2/(G1+G2)  
+    G4=G1
+      'bootom row of the lattice
+    for i= 2 to Lx
+ 	  if flag="x" then G1=siteGx(i,j) else  G1=siteGy(i,j)
+	  G3=G1
+      if flag="x" then G2=siteGx(i,j+1) else G2=siteGy(i,j+1)
+	  G(i,j,1)=2.0*G1*G2/(G1+G2) 'vertical bond
+      G(i,j,2)=2.0*G3*G4/(G3+G4) 'horizontal bond
+  	  G4=G1
+    next i  
+      'horizontal bond at the right end of the lattice
+    G(Lx1,j,2)=2.0*G4 
+  next j
+    'horizontal bond at the left-upper corner of the lattice
+  if flag="x" then G4=siteGx(1,Ly) else G4=siteGy(1,Ly)
+  G(1,Ly,2)=2.0*G4 
+    'horizontal bonds at the upper side of the lattice
+  for i=2 to Lx
+    if flag="x" then G3=siteGx(i,Ly) else G3=siteGy(i,Ly)
+    G(i,Ly,2)=2.0*G3*G4/(G3+G4)
+    G4=G3
+  next i
+   'horizontal bond at the right-upper corner of the lattice
+  G(Lx1,Ly,2)=2.0*G4  
+end sub
+
+
+function series(G1 as double, G2 as double) as double 
+  series=(G1*G2)/(G1+G2)  
+end function
+
+function parallel(G1 as double, G2 as double) as double
+  parallel=G1+G2
+end function 
+
+sub T4(G1 as double,G2 as double, G3 as double, G5 as double ) 
+  dim as double  G6,G7,G8      
+  dim as double  G123,G58       
+  
+  if(G1> 1e100) then  G1=1e100
+   if(G1<1e-100)then  G1=1e-100  
+   G123=(1./G1+1./G2+1./G3)
+   G6=G1*G2*G123
+   G7=G1*G3*G123
+   G8=G2*G3*G123
+   G58=G5*G8/(G5+G8) 
+   G2=G6
+   G3=G7
+   G5=G58
+end sub
+
+sub T5(G1 as double, G2 as double, G3 as double, G4 as double, G5 as double)
+ dim as double  G6, G7, G8        
+ dim as double  G9, G10,G11      
+ dim as double  G123, G458       
+ 
+  if(G1>1e100) then  G1=1e100
+  if(G1<1e-100)then  G1=1e-100  
+  G123=(1./G1+1./G2+1./G3)
+  G6=G1*G2*G123
+  G7=G1*G3*G123
+  G8=G2*G3*G123
+  G458=G4+G5+G8
+  G9=G4*G8/G458
+  G10=G5*G8/G458
+  G11=G4*G5/G458
+  G1=G11
+  G2=G6
+  G3=G7
+  G4=G9
+  G5=G10
+end	sub 
+
+function  FLalgo() as double
+ dim as integer i,j, kk, mm  
+ dim as double  G1
+ dim as double  GL	
+ 
+ for i=1 to Lx	
+ for j=Ly-1 to 1 step -1
+   if (i=1) then  
+     G1=G(i,j+1,2)
+   else
+     G1=series(G(i,j+1,2),G(i-1,j,1))
+   end if
+   kk=i 
+   mm=j 
+   
+43 
+  if(mm=1) then 
+     T4(G1,G(kk,mm,2),G(kk,mm,1),G(kk+1,mm,2))
+     goto 41
+   else
+     T5(G1,G(kk,mm,2),G(kk,mm,1),G(kk,mm-1,1),G(kk+1,mm,2))
+   end if
+   
+   kk=kk+1: mm=mm-1
+   
+   if(kk=Lx+1) then
+	 G(kk,mm,2)=parallel(G1,G(kk,mm,2))
+     goto 42
+   end if
+   
+   if(mm=1) then
+	 T4(G1,G(kk,mm,2),G(kk,mm,1),G(kk+1,mm,2))
+     goto 42
+   end if
+   goto 43
+   
+42
+   next j
+41 
+   next i
+
+ i=Lx+1
+ for j=Ly-1 to 1 step -1
+   G(i,j,2)=parallel(series(G(i,j+1,2),G(i-1,j,1)),G(i,j,2))
+ next j
+ GL=series(G(1,1,2),G(2,1,2))
+ 
+ for i=3 to Lx+1
+   GL=series(GL,G(i,1,2))
+ next i
+ return(GL)
+
+end function
+
+
+
+Обрахування ефективного коефіцієнту дифузії
+
+#lang "fblite"
+declare sub Diffus()
+declare sub profile()
+declare sub Main()
+
+defdbl A-Z
+dim shared as integer x,y,Lx,Ly,L1,L2,t,ZZ
+dim shared as double DensitySum, z
+Lx = 64: 'size of the system
+Ly = 128: 'size of the system
+L1=Lx+1: L2=Lx*Ly
+SCREEN 20: VIEW (100, 100)-(740, 740):WINDOW (0, 0)-(L1, 1.1)
+DIM shared C(0 TO L1, 1 TO Ly):
+DIM shared D(0 TO L1, 1 TO Ly):
+DIM shared p(0 TO L1)
+
+DIM shared as integer dx(4),dy(4)
+dx(1) = 1: dy(1) = 0:dx(2) = 0: dy(2) = -1:dx(3) = -1: dy(3) = 0:dx(4) = 0: dy(4) = 1: ' diffusion directions
+randomize(timer)
+
+'z damage degree z=ZZ/10
+
+for ZZ=0 to 100 step 5
+Main()
+next ZZ
+
+end
+
+
+sub Main()
+ratio=1000
+open "D01000_"+str(ZZ)+".dat" for output as #1
+z=ZZ/100
+For x=0 to L1: for y=1 to Ly:
+    C(x,y)=1:D(x,y)=1/ratio: if z>rnd then D(x,y)=1  'damaged
+    if x=0 or x=L1 then C(x,y)=0:D(x,y)=1:'damaged
+next y:  next x
+t=0: profile(): locate 2,1: ?t, DensitySum: ?#1, t, DensitySum
+
+DO
+for i=1 to L2:Diffus():next i: t=t+1:
+
+if t<1000 then 
+if t mod 10 =0 then 
+    profile(): 
+    locate 1,1: print "                        ": 
+    locate 1,1: print z: locate 2,1:?t, DensitySum: 
+    ?#1, t, DensitySum
+end if
+else 
+if t mod 1000 =0 then 
+    profile(): 
+    locate 1,1: print "                        ": 
+    locate 1,1: print z: locate 2,1:?t, DensitySum: 
+    ?#1, t, DensitySum
+end if    
+    
+end if    
+
+
+
+
+
+LOOP until t>1000000 or DensitySum<1e-3
+close #1
+end sub
+
+sub Diffus()
+dim as integer i,xn,yn
+     x=Int(Lx*rnd)+1:y=Int(Ly*rnd)+1:i = INT(4 * RND) + 1: xn = x + dx(i): yn = y + dy(i):
+     if yn>Ly then yn=1
+     if yn<1 then yn=Ly
+     De=D(x,y)*D(xn,yn)/(D(x,y)+D(xn,yn)): '=0.5 for both damaged
+     dC=C(x,y)-C(xn,yn):C(x,y)=C(x,y)-dC*De:C(xn,yn)=C(xn,yn)+dC*De:
+     if xn>Lx then C(xn,yn)=0
+     if xn<1 then C(xn,yn)=0
+'     locate 1,1: ?C(x,y)*15,C(xn,yn)*15: circle (x, y),0.1,C(x,y)*15:circle (xn, yn),0.1,C(xn,yn)*15:
+end sub
+
+sub profile()
+    DensitySum=0
+    for x=1 to Lx: p(x)=0: 
+        for y=1 to Ly:p(x)=p(x)+C(x,y):DensitySum=DensitySum+C(x,y): next y
+            p(x)=p(x)/(Ly): 
+    next x
+    DensitySum=DensitySum/L2
+    cls
+    line (Lx/2, 0)-(Lx/2,1)
+    pset(0,p(0)): for x=1 to L1:line -(x,p(x)): next x  
+end sub
